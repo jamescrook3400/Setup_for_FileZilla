@@ -1,0 +1,167 @@
+import os
+import shutil
+import hashlib
+
+def generate_checksum(source_file_path):
+
+    """
+    Generates checksum from source file
+
+    Args:
+        source_file_path (str): Path to the file from which the checksum is generated.
+    """
+    sha256_hash = hashlib.sha256()
+    chunk_size = 4096 
+
+    try:
+        with open(source_file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(chunk_size), b''):
+                sha256_hash.update(chunk)
+        checksum = sha256_hash.hexdigest()
+    except FileNotFoundError:
+        return "Error: File not found."
+    except Exception as e:
+        return f"An error occurred: {e}"
+    
+    return(checksum)
+
+def parse_accession(source_file_path,accession):
+
+    """
+    Generates names accession (with and without extension) for 
+
+    Args:
+        source_file_path (str): The path to the file to be moved into the folder.
+        accession (str): Usually the accession number, but also works if there is no accession number provided.
+    """
+    #save original name for metadata text file
+    original_name, extension = os.path.splitext(os.path.basename(source_file_path)) 
+    if accession == '':
+        accession = original_name + extension
+        accession_no_extension = original_name
+    else:
+        accession_no_extension = accession
+        accession = accession_no_extension + extension
+
+    return(original_name,extension, accession,accession_no_extension)
+
+def update_folder_with_file(source_file_path, staging_directory):
+     
+    """
+    Moves another file into the preexisting staging directory.
+
+    Args:
+        source_file_path (str): The path to the file to be moved into the folder.
+        staging_directory (boolean, optional): If True, make a new directory. If False, add to previous directory and metadata file.
+    """
+    
+    original_name, extension = os.path.splitext(os.path.basename(source_file_path))
+        
+    #Copy next file to the staging directory
+    try:
+        shutil.copy(source_file_path, staging_directory +"/"+original_name + extension)
+        print(f"File '{original_name + extension}' copied to '{staging_directory}'.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    
+    #generate checksum from source file, not the copy
+    checksum= generate_checksum(source_file_path)
+    
+    content = checksum + "  " + original_name + extension
+
+    # Open the metadata file in append mode ('a') and write content
+    with open(staging_directory + "/Metadata/checksum.sha256", 'a') as f:
+        f.write("\n")
+        f.write(content)
+    print(f"Metadata successfully updated")
+
+def create_folder_with_file(source_file_path, big_folder_path = "/Users/mediamigration/Staging Directory", staging_directory = None):
+
+    """
+    Creates a new folder and moves a specified file into it. Returns the newly created staging directory path.
+
+    Args:
+        source_file_path (str): The path to the file to be moved into the folder.
+        big_folder_path (str, optional): Centralized folder for where all ingested material goes. You should modifty this for your own computer.
+        staging_directory (boolean, optional): If None, a new directory will be created. Otherwise, the update folder function will be called.
+    """
+    try:
+        #If we haven't already made our staging directory
+        if staging_directory is None:
+            # Get the base name of the file (e.g., "my_document.txt" from "/path/to/my_document.txt")
+            original_name, extension, accession, accession_no_extension= parse_accession(source_file_path, input("Enter the accession number:"))
+           
+            folder_name = accession_no_extension
+        # Create the new folder if it doesn't already exist
+            try:
+                os.mkdir(big_folder_path+"/"+folder_name)
+                print(f"Folder '{folder_name}' created.")
+            except:
+                print(f"Folder '{folder_name}' exists.")
+
+            # Construct the destination path for the file inside the new folder
+            destination_file_path = big_folder_path+"/"+folder_name+"/" + original_name + extension
+
+            # Move the file into the new folder
+            shutil.copy(source_file_path, destination_file_path)
+            print(f"File '{original_name + extension}' copied to '{folder_name}'.")
+
+        #If we have already made our staging directory 
+        else:
+            update_folder_with_file(source_file_path, staging_directory)
+            return(staging_directory)
+            
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    
+    #Generate checksum from the source file, not the copy
+    checksum= generate_checksum(source_file_path)
+    
+    # Make metadata folder
+    os.mkdir(big_folder_path+"/"+folder_name+"/metadata")
+    folder_path = big_folder_path+ "/"+folder_name+"/metadata"
+
+    # Construct the full metadata file path
+    file_name = "checksum.sha256" 
+    file_path = os.path.join(folder_path, file_name)
+    content = checksum + "  " + original_name + extension
+
+    # Open the metadata file in write mode ('w') and write content
+    with open(file_path, 'w') as f:
+        f.write(content)
+    print(f"File '{file_name}' successfully created in '{folder_path}'")
+
+    return(big_folder_path+"/"+folder_name)
+
+def parse_path(path):
+    """
+    Eliminates excess characters from the path that may appear when it is dragged into the terminal.
+
+    Args:
+        path (str): The path that is dragged into the terminal.
+    """
+    if path[-1] == ' ':
+        path = path[:-1]
+    if path[0]=='\'' and path[-1] == '\'':
+        path = path[1:-1]
+    path=path.replace("\\\\", "\\")
+    path=path.replace("\ ", " ")
+    return path
+
+def main():
+    """
+    Main function
+
+    Args:
+        None
+    """
+    staging_directory = create_folder_with_file(parse_path(input("Drag your source file here:")))
+
+    #Iterate forever
+    while staging_directory is not None:
+        staging_directory= create_folder_with_file(parse_path(input("Drag your next source file here:")), staging_directory=staging_directory)
+
+main()
+
+
+
